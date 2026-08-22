@@ -1,31 +1,68 @@
-import { useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import MapView, {
   Marker,
   NavigationControl,
   Popup,
 } from "react-map-gl/maplibre";
-import type { Peak, PeakList, MatchMode } from "./types";
-import peaksData from "./data/peaks.json";
-import listsData from "./data/lists.json";
+import type {
+  AppData,
+  ImportResult,
+  MatchMode,
+  Peak,
+  PeakList,
+} from "./types";
 
-const peaks = peaksData as Peak[];
-const lists = listsData as PeakList[];
-
-const MAP_STYLE =
-  "https://tiles.openfreemap.org/styles/liberty";
+const MAP_STYLE = "https://tiles.openfreemap.org/styles/liberty";
 
 export default function App() {
-  const [selectedLists, setSelectedLists] = useState<string[]>(
-    lists.map((list) => list.id)
-  );
+  const [lists, setLists] = useState<PeakList[]>([]);
+  const [peaks, setPeaks] = useState<Peak[]>([]);
+  const [selectedLists, setSelectedLists] = useState<string[]>([]);
   const [matchMode, setMatchMode] = useState<MatchMode>("any");
   const [search, setSearch] = useState("");
   const [selectedPeak, setSelectedPeak] = useState<Peak | null>(null);
   const [hoveredPeak, setHoveredPeak] = useState<Peak | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [importUrl, setImportUrl] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importMessage, setImportMessage] = useState("");
+  const [importError, setImportError] = useState("");
+  const [importerReady, setImporterReady] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    void loadData(true);
+    void fetch("/api/importer-status")
+      .then((response) => response.json())
+      .then((status: { ready: boolean }) => setImporterReady(status.ready))
+      .catch(() => setImporterReady(false));
+  }, []);
+
+  async function loadData(selectEverything = false) {
+    try {
+      setLoadError("");
+      const response = await fetch("/api/data");
+      if (!response.ok) throw new Error(`Data request failed (${response.status})`);
+      const data = (await response.json()) as AppData;
+      setLists(data.lists);
+      setPeaks(data.peaks);
+      if (selectEverything) {
+        setSelectedLists(data.lists.map((list) => list.id));
+      } else {
+        setSelectedLists((current) =>
+          current.filter((id) => data.lists.some((list) => list.id === id)),
+        );
+      }
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setLoading(false);
+    }
+  }
 
   const listById = useMemo(
-    () => new Map(lists.map((list) => [list.id, list])),
-    []
+    () => new Map(lists.map((list) => [list.id, list] as const)),
+    [lists],
   );
 
   const visiblePeaks = useMemo(() => {
@@ -44,14 +81,50 @@ export default function App() {
 
       return selectedLists.every((listId) => peak.listIds.includes(listId));
     });
-  }, [selectedLists, matchMode, search]);
+  }, [peaks, selectedLists, matchMode, search]);
 
   function toggleList(listId: string) {
     setSelectedLists((current) =>
       current.includes(listId)
         ? current.filter((id) => id !== listId)
-        : [...current, listId]
+        : [...current, listId],
     );
+  }
+
+  async function importList(event: FormEvent) {
+    event.preventDefault();
+    if (importing) return;
+
+    setImporting(true);
+    setImportError("");
+    setImportMessage(
+      "Chrome is open for this import. If Cloudflare asks for verification, complete it manually there; the import resumes automatically.",
+    );
+
+    try {
+      const response = await fetch("/api/import-list", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: importUrl }),
+      });
+      const body = (await response.json()) as ImportResult | { error: string };
+
+      if (!response.ok) {
+        throw new Error("error" in body ? body.error : "List import failed.");
+      }
+
+      const result = body as ImportResult;
+      await loadData(true);
+      setImportMessage(
+        `Imported ${result.list.name}: ${result.addedPeaks} new peaks, ${result.reusedPeaks} existing peaks reused.`,
+      );
+      setImportUrl("");
+    } catch (error) {
+      setImportMessage("");
+      setImportError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setImporting(false);
+    }
   }
 
   return (
@@ -60,10 +133,33 @@ export default function App() {
         <div className="brand">
           <div className="eyebrow">WASHINGTON</div>
           <h1>Mountaineers Peak Map</h1>
-          <p>
-            Explore peaks across Mountaineers peak-bagging lists.
-          </p>
+          <p>Explore peaks across Mountaineers peak-bagging lists.</p>
         </div>
+
+        <form className="import-panel" onSubmit={importList}>
+          <div className="section-heading">Add Peakbagger list</div>
+          <input
+            type="url"
+            value={importUrl}
+            onChange={(event) => setImportUrl(event.target.value)}
+            placeholder="https://www.peakbagger.com/list.aspx?lid=5045"
+            required
+            disabled={importing}
+          />
+          <button
+            type="submit"
+            disabled={importing || importerReady === false}
+          >
+            {importing ? "Importing…" : "Import list"}
+          </button>
+          {importerReady === false && (
+            <p className="status error">
+              Browser importer not installed. Run: npm run setup:browser
+            </p>
+          )}
+          {importMessage && <p className="status success">{importMessage}</p>}
+          {importError && <p className="status error">{importError}</p>}
+        </form>
 
         <label className="search-block">
           <span>Search peaks</span>
@@ -79,12 +175,14 @@ export default function App() {
 
           <div className="mode-switch">
             <button
+              type="button"
               className={matchMode === "any" ? "active" : ""}
               onClick={() => setMatchMode("any")}
             >
               ANY
             </button>
             <button
+              type="button"
               className={matchMode === "all" ? "active" : ""}
               onClick={() => setMatchMode("all")}
             >
@@ -103,10 +201,15 @@ export default function App() {
           <div className="section-heading">Peak lists</div>
 
           <div className="list-controls">
-            <button onClick={() => setSelectedLists(lists.map((l) => l.id))}>
+            <button
+              type="button"
+              onClick={() => setSelectedLists(lists.map((list) => list.id))}
+            >
               Select all
             </button>
-            <button onClick={() => setSelectedLists([])}>Clear</button>
+            <button type="button" onClick={() => setSelectedLists([])}>
+              Clear
+            </button>
           </div>
 
           <div className="list-items">
@@ -118,20 +221,26 @@ export default function App() {
                   onChange={() => toggleList(list.id)}
                 />
                 <span className="list-name">{list.name}</span>
-                <span className="list-count">{list.peakCount ?? ""}</span>
+                <span className="list-count">{list.peakCount}</span>
               </label>
             ))}
           </div>
+
+          {!loading && lists.length === 0 && (
+            <div className="empty-list">
+              No lists imported yet. Paste a Peakbagger list URL above.
+            </div>
+          )}
         </section>
 
+        {loadError && <div className="status error">{loadError}</div>}
+
         <div className="result-count">
-          <strong>{visiblePeaks.length}</strong> of {peaks.length} prototype peaks
-          shown
+          <strong>{visiblePeaks.length}</strong> of {peaks.length} peaks shown
         </div>
 
-        <div className="prototype-note">
-          V0 contains representative sample peaks only. The full importer is the
-          next development step.
+        <div className="marker-key">
+          Marker size represents how many imported lists contain a peak.
         </div>
       </aside>
 
@@ -148,24 +257,27 @@ export default function App() {
         >
           <NavigationControl position="top-right" />
 
-          {visiblePeaks.map((peak) => (
-            <Marker
-              key={peak.peakbaggerId}
-              longitude={peak.longitude}
-              latitude={peak.latitude}
-              anchor="center"
-            >
-              <button
-                className={`peak-marker ${
-                  peak.listIds.length > 1 ? "multi-list" : ""
-                }`}
-                aria-label={`${peak.name}, ${peak.elevationFt.toLocaleString()} feet`}
-                onMouseEnter={() => setHoveredPeak(peak)}
-                onMouseLeave={() => setHoveredPeak(null)}
-                onClick={() => setSelectedPeak(peak)}
-              />
-            </Marker>
-          ))}
+          {visiblePeaks.map((peak) => {
+            const markerSize = sizeForMemberships(peak.listIds.length);
+            return (
+              <Marker
+                key={peak.peakbaggerId}
+                longitude={peak.longitude}
+                latitude={peak.latitude}
+                anchor="center"
+              >
+                <button
+                  className="peak-marker"
+                  style={{ width: markerSize, height: markerSize }}
+                  aria-label={`${peak.name}, ${peak.elevationFt.toLocaleString()} feet, ${peak.listIds.length} lists`}
+                  title={`${peak.name} · ${peak.listIds.length} list${peak.listIds.length === 1 ? "" : "s"}`}
+                  onMouseEnter={() => setHoveredPeak(peak)}
+                  onMouseLeave={() => setHoveredPeak(null)}
+                  onClick={() => setSelectedPeak(peak)}
+                />
+              </Marker>
+            );
+          })}
 
           {hoveredPeak && !selectedPeak && (
             <Popup
@@ -199,6 +311,10 @@ export default function App() {
   );
 }
 
+function sizeForMemberships(count: number): number {
+  return Math.min(26, 10 + Math.max(0, count - 1) * 3);
+}
+
 function PeakSummary({
   peak,
   listById,
@@ -213,9 +329,11 @@ function PeakSummary({
       <h2>{peak.name}</h2>
       <div className="peak-elevation">
         {peak.elevationFt.toLocaleString()} ft
+        {peak.prominenceFt !== undefined &&
+          ` · ${peak.prominenceFt.toLocaleString()} ft prominence`}
       </div>
 
-      {!compact && <div className="popup-label">Mountaineers lists</div>}
+      {!compact && <div className="popup-label">Imported lists</div>}
 
       <div className="badges">
         {peak.listIds.map((listId) => (
@@ -224,6 +342,17 @@ function PeakSummary({
           </span>
         ))}
       </div>
+
+      {!compact && (
+        <a
+          className="peak-link"
+          href={peak.sourceUrl}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Open on Peakbagger ↗
+        </a>
+      )}
     </div>
   );
 }

@@ -1,9 +1,9 @@
 export type PeakList = {
   id: string;
+  peakbaggerListId: number;
   name: string;
-  branch?: string;
-  peakCount?: number;
-  sourceUrl?: string;
+  peakCount: number;
+  sourceUrl: string;
 };
 
 export type Peak = {
@@ -13,8 +13,20 @@ export type Peak = {
   longitude: number;
   elevationFt: number;
   prominenceFt?: number;
-  sourceUrl?: string;
+  sourceUrl: string;
   listIds: string[];
 };
 
 export type MatchMode = "any" | "all";
+
+export type AppData = {
+  lists: PeakList[];
+  peaks: Peak[];
+};
+
+export type ImportResult = {
+  list: PeakList;
+  addedPeaks: number;
+  reusedPeaks: number;
+  totalPeaks: number;
+};
