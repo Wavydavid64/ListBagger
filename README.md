@@ -2,7 +2,7 @@
 
 Local React + MapLibre application for exploring Mountaineers / Peakbagger peak lists.
 
-## V0.7
+## V0.8
 
 V0.7 focuses on speed, resumability, and future-proof caching.
 
@@ -134,3 +134,53 @@ data/source/peaks/<pid>.html
 The next time a legacy peak appears in an imported list, V0.7 fetches that peak
 page once to backfill the source archive. After that it is fully cached and does
 not need to be fetched again merely because we add new parsed fields later.
+
+
+## V0.8 interface additions
+
+### List management
+
+The sidebar now has a dedicated **Lists** tab with:
+
+- imported list inventory
+- cached membership count
+- last fetched timestamp
+- one-click re-import
+- Peakbagger URL import field
+- browser importer status
+
+### Dataset validation
+
+The Lists tab can run local validation and reports:
+
+- duplicate list IDs
+- duplicate Peakbagger IDs
+- missing/invalid coordinates
+- missing elevation
+- unknown list memberships
+- list-count mismatches
+- cached peaks with zero current memberships
+- missing raw source HTML
+
+### Map filters
+
+The Map tab now supports:
+
+- peak-name search
+- list-name search
+- ANY / ALL list matching
+- 2+, 3+, 4+, 5+ list-membership filters
+- zoom-to-visible-results
+
+### Peak detail
+
+Peak popups now expose:
+
+- elevation
+- prominence
+- number of list memberships
+- complete imported list membership
+- selected cached Peakbagger label/value metadata
+- direct Peakbagger link
+
+Marker size continues to encode number of list memberships. Marker color remains reserved for future difficulty data.

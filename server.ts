@@ -79,6 +79,138 @@ app.get("/api/importer-status", async (_req, res) => {
   });
 });
 
+
+app.get("/api/validate", async (_req, res) => {
+  try {
+    const [lists, peaks] = await Promise.all([
+      readJson<PeakList[]>(LISTS_FILE),
+      readJson<Peak[]>(PEAKS_FILE),
+    ]);
+
+    const issues: Array<{
+      severity: "error" | "warning";
+      code: string;
+      message: string;
+      entity?: string;
+    }> = [];
+
+    const listIds = new Set<string>();
+    for (const list of lists) {
+      if (listIds.has(list.id)) {
+        issues.push({
+          severity: "error",
+          code: "DUPLICATE_LIST_ID",
+          message: `Duplicate list ID ${list.id}.`,
+          entity: list.name,
+        });
+      }
+      listIds.add(list.id);
+    }
+
+    const peakIds = new Set<number>();
+    for (const peak of peaks) {
+      if (peakIds.has(peak.peakbaggerId)) {
+        issues.push({
+          severity: "error",
+          code: "DUPLICATE_PEAK_ID",
+          message: `Duplicate Peakbagger ID ${peak.peakbaggerId}.`,
+          entity: peak.name,
+        });
+      }
+      peakIds.add(peak.peakbaggerId);
+
+      if (
+        !Number.isFinite(peak.latitude) ||
+        !Number.isFinite(peak.longitude)
+      ) {
+        issues.push({
+          severity: "error",
+          code: "MISSING_COORDINATES",
+          message: "Peak is missing valid coordinates.",
+          entity: peak.name,
+        });
+      }
+
+      if (!Number.isFinite(peak.elevationFt) || peak.elevationFt <= 0) {
+        issues.push({
+          severity: "error",
+          code: "MISSING_ELEVATION",
+          message: "Peak is missing a valid elevation.",
+          entity: peak.name,
+        });
+      }
+
+      if (peak.listIds.length === 0) {
+        issues.push({
+          severity: "warning",
+          code: "ZERO_MEMBERSHIPS",
+          message: "Peak is cached but currently belongs to no imported lists.",
+          entity: peak.name,
+        });
+      }
+
+      if (!peak.sourceArchive) {
+        issues.push({
+          severity: "warning",
+          code: "NO_RAW_SOURCE",
+          message: "Peak has parsed data but no archived raw Peakbagger HTML yet.",
+          entity: peak.name,
+        });
+      } else {
+        const absolute = path.join(__dirname, peak.sourceArchive);
+        if (!(await fileExists(absolute))) {
+          issues.push({
+            severity: "warning",
+            code: "MISSING_RAW_FILE",
+            message: `Archived source file is missing: ${peak.sourceArchive}`,
+            entity: peak.name,
+          });
+        }
+      }
+
+      for (const listId of peak.listIds) {
+        if (!listIds.has(listId)) {
+          issues.push({
+            severity: "error",
+            code: "UNKNOWN_LIST_MEMBERSHIP",
+            message: `Peak references unknown list ${listId}.`,
+            entity: peak.name,
+          });
+        }
+      }
+    }
+
+    for (const list of lists) {
+      const actual = peaks.filter((peak) => peak.listIds.includes(list.id)).length;
+      if (typeof list.peakCount === "number" && actual !== list.peakCount) {
+        issues.push({
+          severity: "error",
+          code: "LIST_COUNT_MISMATCH",
+          message: `${list.name} expects ${list.peakCount} peaks but local memberships total ${actual}.`,
+          entity: list.name,
+        });
+      }
+
+      if (!list.sourceArchive) {
+        issues.push({
+          severity: "warning",
+          code: "LIST_NO_RAW_SOURCE",
+          message: "List has no archived raw Peakbagger HTML yet.",
+          entity: list.name,
+        });
+      }
+    }
+
+    res.json({
+      errors: issues.filter((issue) => issue.severity === "error").length,
+      warnings: issues.filter((issue) => issue.severity === "warning").length,
+      issues,
+    });
+  } catch (error) {
+    res.status(500).json({ error: messageFrom(error) });
+  }
+});
+
 app.post("/api/import-list", async (req, res) => {
   try {
     await assertImporterReady();
