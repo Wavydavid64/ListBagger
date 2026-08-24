@@ -1,81 +1,61 @@
-# Mountaineers Peak Map
+# Mountaineers Peak Map — V0.9
 
-Local React + MapLibre application for exploring Mountaineers / Peakbagger peak lists.
+Local Washington peak-list explorer using React, MapLibre, SQLite and a browser-assisted Peakbagger importer.
 
-## V0.8
+## What changed
 
-V0.7 focuses on speed, resumability, and future-proof caching.
+V0.9 is the performance architecture pass.
 
-### Startup behavior
+- **SQLite is now the live datastore:** `data/listbagger.db`
+- Existing `data/peaks.json` and `data/lists.json` are automatically migrated on first startup if the database is empty.
+- Legacy JSON files are not deleted.
+- Full raw Peakbagger HTML remains under `data/source/` and is still the future-proof source cache.
+- Peak/list memberships are normalized in SQLite instead of repeatedly rewriting a large JSON document.
+- Import progress is stored in an `imports` table after each peak, so interrupted imports retain progress and cached data.
+- The map no longer creates one React DOM marker per mountain. Peaks are rendered as one MapLibre **GeoJSON circle layer** using WebGL.
+- Marker size still represents number of list memberships. Color remains reserved for difficulty.
 
-The map always reads the local files first:
+## Preserve these when upgrading
+
+Do not delete:
 
 ```text
-data/peaks.json
-data/lists.json
+data/
+.cache/
+.venv/
+.git/
 ```
 
-Every mountain successfully imported in an earlier session appears when the app starts. No Peakbagger request is required to display cached mountains.
-
-### Two-layer cache
-
-Parsed data is stored in:
+The most important directory is `data/`. It now contains:
 
 ```text
-data/peaks.json
-data/lists.json
-```
-
-The **complete source HTML** for every fetched page is also archived:
-
-```text
-data/source/peaks/<pid>.html
-data/source/lists/<lid>.html
+data/listbagger.db
+data/source/peaks/*.html
+data/source/lists/*.html
 data/source/meta/*.json
 ```
 
-The raw HTML archive is deliberate. We cannot know every field the UI may need in the future, so preserving the entire source page is safer than trying to guess every useful field now. Future versions can reparse those archived pages without hitting Peakbagger again.
-
-Each peak also stores convenient parsed source metadata such as generic label/value fields in `sourceAttributes`.
-
-### Checkpointing
-
-Every newly fetched peak is written to `data/peaks.json` immediately.
-
-If an import stops at peak 73 of 100, those 73 are still present. Restarting the import reuses them instead of fetching them again.
-
-Cached peaks are retained even if they currently belong to zero imported lists. This preserves the expensive source cache.
-
-### Faster verified-session fetching
-
-Cloudflare verification remains manual.
-
-After you verify once in the dedicated normal Chrome window, the importer keeps that verified tab open and requests individual peak pages from inside the same Chrome session using same-origin browser `fetch()`.
-
-That avoids full browser navigation for every mountain.
-
-If Peakbagger challenges an individual fast request, the importer falls back to visible Chrome navigation and waits for manual verification rather than failing.
-
-A one-second delay remains between genuinely new Peakbagger peak requests.
-
 ## Requirements
 
-- Node.js 22+
+- Node.js **22.13+**
 - npm
 - Python 3.12+
-- Google Chrome for macOS
+- Google Chrome
 
-## Install
+V0.9 uses Node's built-in `node:sqlite`; no SQLite npm package is required.
+
+## Install / run
 
 ```bash
 npm install
-npm run setup:browser
+npm run build
+npm run dev
 ```
 
-## Run
+If `.venv` is missing:
 
 ```bash
-npm run dev
+npm run setup:browser
 ```
 
 Open:
@@ -84,103 +64,45 @@ Open:
 http://127.0.0.1:5173
 ```
 
-## Import a list
+## Automatic JSON → SQLite migration
 
-Paste a Peakbagger list URL such as:
-
-```text
-https://www.peakbagger.com/list.aspx?lid=5045
-```
-
-If Cloudflare appears, complete it manually in the Chrome window. The import resumes automatically.
-
-## Important when upgrading versions
-
-**Do not delete or overwrite your `data/` directory.**
-
-That directory contains both your map database and the raw Peakbagger source archive.
-
-The browser-only profile is separate:
+At startup, if `data/listbagger.db` contains no peaks/lists, the server reads legacy:
 
 ```text
-.cache/peakbagger-map/chrome-profile/
+data/peaks.json
+data/lists.json
 ```
 
-`.cache/` can be deleted if necessary. `data/` is the valuable persistent dataset.
+and imports peaks, lists, source metadata and memberships into SQLite.
 
-## Build
+Once the DB contains data, SQLite is authoritative. The legacy JSON files remain untouched as a backup.
 
-```bash
-npm run build
-```
-
-Run the built app locally:
-
-```bash
-npm start
-```
-
-
-## Migrating from V0.6 or earlier
-
-Older versions cached only parsed peak fields. V0.7 deliberately treats those
-entries as a partial/legacy cache until the corresponding raw source page exists
-under:
+## Database schema
 
 ```text
-data/source/peaks/<pid>.html
+peaks
+lists
+peak_list_memberships
+source_pages
+imports
 ```
 
-The next time a legacy peak appears in an imported list, V0.7 fetches that peak
-page once to backfill the source archive. After that it is fully cached and does
-not need to be fetched again merely because we add new parsed fields later.
+`peakbagger_id` is the canonical peak key.
 
+## Import behavior
 
-## V0.8 interface additions
+Paste any Peakbagger list URL in the Lists tab. The importer:
 
-### List management
+1. records an import row in SQLite
+2. opens the persistent Chrome profile
+3. waits for manual Cloudflare verification if necessary
+4. parses list membership
+5. reuses peaks whose full raw source HTML is cached
+6. fetches only missing peak pages
+7. upserts each peak and membership directly into SQLite
+8. updates import progress after each peak
+9. archives all newly fetched HTML under `data/source/`
 
-The sidebar now has a dedicated **Lists** tab with:
+## Performance
 
-- imported list inventory
-- cached membership count
-- last fetched timestamp
-- one-click re-import
-- Peakbagger URL import field
-- browser importer status
-
-### Dataset validation
-
-The Lists tab can run local validation and reports:
-
-- duplicate list IDs
-- duplicate Peakbagger IDs
-- missing/invalid coordinates
-- missing elevation
-- unknown list memberships
-- list-count mismatches
-- cached peaks with zero current memberships
-- missing raw source HTML
-
-### Map filters
-
-The Map tab now supports:
-
-- peak-name search
-- list-name search
-- ANY / ALL list matching
-- 2+, 3+, 4+, 5+ list-membership filters
-- zoom-to-visible-results
-
-### Peak detail
-
-Peak popups now expose:
-
-- elevation
-- prominence
-- number of list memberships
-- complete imported list membership
-- selected cached Peakbagger label/value metadata
-- direct Peakbagger link
-
-Marker size continues to encode number of list memberships. Marker color remains reserved for future difficulty data.
+Hundreds or thousands of peaks are rendered through one WebGL layer rather than hundreds/thousands of DOM nodes. Filtering still happens locally, but updating one GeoJSON source is much cheaper than re-rendering a React marker component per peak.

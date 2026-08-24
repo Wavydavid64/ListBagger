@@ -4,8 +4,10 @@ export type PeakList = {
   name: string;
   peakCount: number;
   sourceUrl: string;
+  sourceArchive?: string;
+  sourceFetchedAt?: string;
+  sourceSchemaVersion?: number;
 };
-
 export type Peak = {
   peakbaggerId: number;
   name: string;
@@ -14,19 +16,25 @@ export type Peak = {
   elevationFt: number;
   prominenceFt?: number;
   sourceUrl: string;
+  sourceArchive?: string;
+  sourceFetchedAt?: string;
+  sourceSchemaVersion?: number;
+  sourceAttributes?: Record<string, string>;
   listIds: string[];
 };
-
 export type MatchMode = "any" | "all";
-
-export type AppData = {
-  lists: PeakList[];
-  peaks: Peak[];
-};
-
-export type ImportResult = {
-  list: PeakList;
+export type AppData = { lists: PeakList[]; peaks: Peak[] };
+export type ImportResult = { list: PeakList; addedPeaks: number; reusedPeaks: number; totalPeaks: number };
+export type ImportRow = {
+  id: number;
+  sourceUrl: string;
+  listId?: string;
+  status: string;
+  startedAt: string;
+  completedAt?: string;
+  totalPeaks: number;
+  processedPeaks: number;
   addedPeaks: number;
   reusedPeaks: number;
-  totalPeaks: number;
+  error?: string;
 };

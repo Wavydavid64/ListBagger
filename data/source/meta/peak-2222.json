@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "peak",
+  "sourceId": 2222,
+  "url": "https://www.peakbagger.com/peak.aspx?pid=2222",
+  "fetchedAt": "2026-08-24T02:42:07.162550+00:00",
+  "sha256": "29b44f74d449ff950f0a001b411fea7a2e3b8ace0f0f4c851fe598b95e3446f7",
+  "bytes": 31350,
+  "htmlPath": "data/source/peaks/2222.html"
+}
