@@ -1,1 +1,13 @@
 node_modules/
+dist/
+.venv/
+.cache/
+.DS_Store
+*.log
+*.tsbuildinfo
+.env
+.vite
+.vscode/
+data/*.db-shm
+data/*.db-wal
+data/*.db-journal

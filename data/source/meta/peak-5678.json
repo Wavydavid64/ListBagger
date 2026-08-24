@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "kind": "peak",
+  "sourceId": 5678,
+  "url": "https://www.peakbagger.com/peak.aspx?pid=5678",
+  "fetchedAt": "2026-08-24T03:15:16.235364+00:00",
+  "sha256": "f79cf1bdcc8bfc7409491854341919577fbc69edb25614eb96e2f2f8f041f6ae",
+  "bytes": 33620,
+  "htmlPath": "data/source/peaks/5678.html"
+}
